@@ -77,6 +77,11 @@ class Settings:
     review_mode: str = "auto"
     review_confidence: int = 70
 
+    # Updates über GitHub-Releases; Token nur bei privatem Repository nötig (Leserecht genügt)
+    update_check: bool = True
+    github_repo: str = "phillhf/OCRDMS"
+    github_token: str = ""
+
     def dirs(self) -> list[Path]:
         return [Path(p) for p in (self.input_dir, self.output_dir, self.archive_dir, self.error_dir)]
 

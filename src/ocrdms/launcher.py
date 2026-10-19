@@ -46,13 +46,14 @@ def _tray_image():
     return img
 
 
-def run_launcher() -> int:
+def run_launcher(open_browser: bool = True) -> int:
     setup_logging()
     cfg = load_server_config()
     url = server_url(cfg)
 
     if server_running(url):  # läuft bereits (Dienst oder anderer Start) → nur Browser öffnen
-        webbrowser.open(url)
+        if open_browser:
+            webbrowser.open(url)
         return 0
 
     try:
@@ -71,7 +72,8 @@ def run_launcher() -> int:
                     f"Ist Port {cfg.port} bereits belegt? Details im Protokoll unter %PROGRAMDATA%\\OCRDMS\\logs.",
                     error=True)
         return 1
-    webbrowser.open(url)
+    if open_browser:
+        webbrowser.open(url)
 
     import pystray
 

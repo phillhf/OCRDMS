@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import asdict, fields
 from pathlib import Path
@@ -199,14 +200,23 @@ def create_app(engine: Engine, server: ServerConfig | None = None) -> FastAPI:
         return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     # ------------------------------------------------------------ Einstellungen
+    def _public_settings() -> dict:
+        data = asdict(engine.settings)
+        data["github_token_set"] = bool(data.pop("github_token"))  # Token nie an den Browser ausliefern
+        return data
+
     @app.get("/api/settings", dependencies=protected)
     def get_settings():
-        return asdict(engine.settings)
+        return _public_settings()
 
     @app.put("/api/settings", dependencies=protected)
     def put_settings(body: dict):
-        known = {f.name for f in fields(Settings)}
+        known = {f.name for f in fields(Settings)} - {"github_token"}
         data = {**asdict(engine.settings), **{k: v for k, v in body.items() if k in known}}
+        if body.get("github_token"):  # leer = unverändert lassen
+            data["github_token"] = str(body["github_token"]).strip()
+        if body.get("github_token_clear"):
+            data["github_token"] = ""
         try:
             s = Settings(**data)
             s.interval_minutes = max(1, min(1440, int(s.interval_minutes)))
@@ -217,10 +227,29 @@ def create_app(engine: Engine, server: ServerConfig | None = None) -> FastAPI:
             dirs = [Path(d).resolve() for d in (s.input_dir, s.output_dir, s.archive_dir, s.error_dir)]
             if any(not str(d).strip() for d in dirs) or len(set(dirs)) < 4:
                 raise ValueError("Bitte vier unterschiedliche Ordner angeben")
+            if s.github_repo and not re.fullmatch(r"[\w.-]+/[\w.-]+", s.github_repo.strip()):
+                raise ValueError("GitHub-Repository bitte als „Besitzer/Name“ angeben")
             engine.update_settings(s)
         except (ValueError, TypeError, OSError) as e:
             raise HTTPException(400, str(e))
-        return asdict(engine.settings)
+        return _public_settings()
+
+    # ------------------------------------------------------------ Updates
+    @app.get("/api/update", dependencies=protected)
+    def update_status():
+        return engine.updater.status()
+
+    @app.post("/api/update/check", dependencies=protected)
+    def update_check():
+        engine.updater.check()
+        return engine.updater.status()
+
+    @app.post("/api/update/install", dependencies=protected)
+    def update_install():
+        if engine.busy:
+            raise HTTPException(409, "Bitte warten, bis die laufende Verarbeitung abgeschlossen ist")
+        engine.updater.install()
+        return engine.updater.status()
 
     @app.get("/api/server", dependencies=protected)
     def get_server(request: Request):

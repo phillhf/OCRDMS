@@ -159,3 +159,17 @@ def test_certificates(tmp_path, monkeypatch):
     mtime = crt.stat().st_mtime_ns
     ensure_server_cert()
     assert crt.stat().st_mtime_ns == mtime  # unverändert → nicht neu ausgestellt
+
+
+def test_settings_never_expose_github_token(client):
+    login(client)
+    r = client.put("/api/settings", json={"github_token": "geheimer-token", "github_repo": "me/OCRDMS"})
+    assert r.status_code == 200
+    body = client.get("/api/settings").json()
+    assert "github_token" not in body and body["github_token_set"] is True
+    assert client.engine.settings.github_token == "geheimer-token"
+    client.put("/api/settings", json={"github_token": ""})  # leer = unverändert
+    assert client.engine.settings.github_token == "geheimer-token"
+    client.put("/api/settings", json={"github_token_clear": True})
+    assert client.engine.settings.github_token == ""
+    assert client.put("/api/settings", json={"github_repo": "kein repo"}).status_code == 400

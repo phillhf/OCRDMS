@@ -13,6 +13,7 @@ from pathlib import Path
 from .config import Settings, Taxonomy, load_settings, load_taxonomy, save_settings, save_taxonomy
 from .ollama_client import OllamaError
 from .pipeline import REVIEW_SUBDIR, Pipeline
+from .updater import Updater, cleanup_old_downloads
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class Engine:
         self.progress: dict | None = None
         self.last_error = ""
         self.last_run_at: float | None = None
+        self.updater = Updater(lambda: (self.settings.github_repo.strip(), self.settings.github_token.strip()))
 
     # ---------- Lebenszyklus
     def start(self) -> None:
@@ -71,7 +73,10 @@ class Engine:
         logging.getLogger().removeHandler(self.log_buffer)
 
     def _schedule_loop(self) -> None:
+        cleanup_old_downloads()
         while not self._stop.is_set():
+            if self.settings.update_check and self.updater.check_due():
+                threading.Thread(target=self.updater.check, daemon=True, name="ocrdms-update-check").start()
             if self.settings.auto_run and time.time() >= self.next_run_at:
                 self.run_now()
             self._wake.wait(1)
@@ -141,6 +146,8 @@ class Engine:
             "last_error": self.last_error,
             "pending": self._count_pending(),
             "review": len(list((Path(self.settings.output_dir) / REVIEW_SUBDIR).glob("*.pdf"))),
+            "update": {"available": self.updater.info.available, "latest": self.updater.info.latest,
+                       "state": self.updater.state, "progress": self.updater.progress},
         }
 
     def _count_pending(self) -> int:

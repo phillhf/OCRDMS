@@ -1,8 +1,12 @@
 ; Inno-Setup-Skript für OCRDMS
 ; Bauen: "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" packaging\installer.iss
-; Voraussetzung: dist\OCRDMS (PyInstaller-Build)
+; Voraussetzung: dist\OCRDMS (PyInstaller-Build). Am einfachsten über packaginguild.ps1.
+; Stilles Update (wie von der Update-Funktion verwendet): OCRDMS-Setup-x.y.z.exe /VERYSILENT
+;   → übernimmt Port, Arbeitsordner, Betriebsart, HTTPS und Firewall der vorherigen Installation.
 
-#define AppVersion "0.2.0"
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
 
 [Setup]
 AppId={{6E7C3B0A-4D1E-4E8B-9C0E-0C2D6F0A1B37}
@@ -47,6 +51,8 @@ Name: "{commonstartup}\OCRDMS"; Filename: "{app}\OCRDMS.exe"; Check: not UseServ
 
 [Run]
 Filename: "{app}\OCRDMS.exe"; Description: "OCRDMS jetzt öffnen"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; Nach einem stillen Update im Infobereich-Betrieb wieder starten (der Dienst startet sich selbst)
+Filename: "{app}\OCRDMS.exe"; Parameters: "--no-browser"; Flags: nowait runasoriginaluser; Check: WizardSilent and not UseService
 
 [UninstallRun]
 Filename: "{app}\OCRDMS.exe"; Parameters: "service stop"; Flags: runhidden waituntilterminated; RunOnceId: "SvcStop"
@@ -90,23 +96,40 @@ begin
     'Die Weboberfläche ist danach im Browser unter https://<Servername>:<Port> erreichbar – ' +
     'auch vom Handy im selben Netz. Der Port lässt sich später in den Einstellungen ändern.');
   NetPage.Add('Port (1–65535):', False);
-  NetPage.Values[0] := ReadExistingPort();
+  NetPage.Values[0] := GetPreviousData('Port', ReadExistingPort());
 
   DirPage := CreateInputDirPage(NetPage.ID,
     'Arbeitsordner', 'Wo sollen Eingang und Ergebnisse liegen?',
     'In diesem Ordner werden die Unterordner Eingang, Verarbeitet, Originale und Fehler angelegt. ' +
     'Bei einer Aktualisierung bleiben bestehende Einstellungen erhalten.', False, '');
   DirPage.Add('');
-  DirPage.Values[0] := ExpandConstant('{sd}\OCRDMS');
+  DirPage.Values[0] := GetPreviousData('WorkDir', ExpandConstant('{sd}\OCRDMS'));
 
   OptPage := CreateInputOptionPage(DirPage.ID,
     'Betriebsart', 'Wie soll OCRDMS laufen?', '', False, False);
   OptPage.Add('Als Windows-Dienst installieren (läuft immer, auch ohne angemeldeten Benutzer)');
   OptPage.Add('HTTPS verwenden (empfohlen – nötig für die Handy-Kamera im Browser)');
   OptPage.Add('Zugriff nur aus dem lokalen Netz erlauben (Windows-Firewall)');
-  OptPage.Values[0] := False;
-  OptPage.Values[1] := True;
-  OptPage.Values[2] := True;
+  if RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\OCRDMS') then
+    OptPage.Values[0] := GetPreviousData('Service', '1') = '1'
+  else
+    OptPage.Values[0] := GetPreviousData('Service', '0') = '1';
+  OptPage.Values[1] := GetPreviousData('Https', '1') = '1';
+  OptPage.Values[2] := GetPreviousData('LocalOnly', '1') = '1';
+end;
+
+function BoolStr(B: Boolean): String;
+begin
+  if B then Result := '1' else Result := '0';
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'Port', Trim(NetPage.Values[0]));
+  SetPreviousData(PreviousDataKey, 'WorkDir', DirPage.Values[0]);
+  SetPreviousData(PreviousDataKey, 'Service', BoolStr(OptPage.Values[0]));
+  SetPreviousData(PreviousDataKey, 'Https', BoolStr(OptPage.Values[1]));
+  SetPreviousData(PreviousDataKey, 'LocalOnly', BoolStr(OptPage.Values[2]));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

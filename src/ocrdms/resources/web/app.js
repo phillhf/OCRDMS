@@ -182,9 +182,40 @@ function statePill(s) {
   return `<span class="pill ok">Bereit</span>`;
 }
 
+// ------------------------------------------------------------------ Update
+async function startUpdate(version) {
+  if (!confirm(`OCRDMS auf Version ${version} aktualisieren?
+
+OCRDMS wird dabei kurz beendet und startet danach automatisch neu.`)) return;
+  try { await api("POST", "/api/update/install"); }
+  catch (e) { return toast(e.message, true); }
+  stopPolling();
+  $("#app").innerHTML = `<div class="login-wrap"><div class="card login" style="text-align:center">
+    <div class="brand"><img src="/static/icon.svg" alt="">OCRDMS</div>
+    <div class="spinner" style="margin:0 auto 1rem"></div>
+    <h2 id="upd-title">Update wird geladen …</h2>
+    <p class="muted small" id="upd-text">Bitte dieses Fenster geöffnet lassen. Die Seite lädt nach dem Update automatisch neu.</p>
+  </div></div>`;
+  const old = state.version, started = Date.now();
+  const tick = async () => {
+    try {
+      const h = await fetch("/api/health", { cache: "no-store" }).then((r) => r.json());
+      if (h.version && h.version !== old) return location.reload();
+      const u = await fetch("/api/update", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (u?.state === "downloading") $("#upd-title").textContent = `Update wird geladen … ${u.progress}%`;
+      else if (u?.state === "installing") $("#upd-title").textContent = "Update wird installiert …";
+      else if (u?.state === "error") { $("#upd-title").textContent = "Update fehlgeschlagen"; $("#upd-text").textContent = u.error; return; }
+    } catch { $("#upd-title").textContent = "Update wird installiert …"; }  // Server gerade beendet
+    if (Date.now() - started > 15 * 60 * 1000) { $("#upd-text").textContent = "Das dauert ungewöhnlich lange. Bitte Seite manuell neu laden."; return; }
+    setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 1500);
+}
+
 // ------------------------------------------------------------------ Übersicht
 function viewOverview(el) {
   el.innerHTML = `
+    <div id="update-box"></div>
     <div id="err-box"></div>
     <div class="card">
       <div class="card-head">
@@ -238,6 +269,16 @@ function updateOverviewStatus() {
     bar.style.width = p.total ? `${Math.round((p.current / p.total) * 100)}%` : "30%";
   }
   $("#err-box").innerHTML = s.last_error && !s.busy ? `<div class="alert err">${esc(s.last_error)}</div>` : "";
+  const u = s.update, ub = $("#update-box");
+  if (u?.available && u.state === "idle") {
+    if (!$("#btn-update-ov")) {
+      ub.innerHTML = `<div class="alert info" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <span style="flex:1">Neue Version <b>${esc(u.latest)}</b> verfügbar (installiert: ${esc(state.version)}).</span>
+        <a class="btn small" href="#/settings">Details</a>
+        <button class="btn small primary" id="btn-update-ov">Jetzt aktualisieren</button></div>`;
+      $("#btn-update-ov").onclick = () => startUpdate(u.latest);
+    }
+  } else ub.innerHTML = "";
 }
 
 async function refreshDocs() {
@@ -601,6 +642,26 @@ async function viewSettings(el) {
       </ol>` : ""}
     </div>
 
+    <div class="card"><h2>Updates</h2>
+      <p class="small" style="margin-top:0">Installierte Version: <b>${esc(state.version)}</b> <span id="upd-info" class="muted"></span></p>
+      <div class="btn-row" style="margin-bottom:1rem">
+        <button type="button" class="btn" id="btn-upd-check">${icon("refresh")}Nach Updates suchen</button>
+        <button type="button" class="btn primary hidden" id="btn-upd-install">Update installieren</button>
+      </div>
+      <div id="upd-notes" class="small hidden" style="white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;max-height:220px;overflow:auto"></div>
+      <form id="upd-form">
+        <label class="check"><input type="checkbox" name="update_check" ${s.update_check ? "checked" : ""}><span>Regelmäßig automatisch nach Updates suchen</span></label>
+        <div class="grid grid-2">
+          <label class="field"><span>GitHub-Repository</span><input type="text" name="github_repo" value="${esc(s.github_repo)}" placeholder="Besitzer/Name"></label>
+          <label class="field"><span>GitHub-Token ${s.github_token_set ? '<span class="chip scope">gespeichert</span>' : ""}</span>
+            <input type="password" name="github_token" autocomplete="off" placeholder="${s.github_token_set ? "unverändert lassen" : "nur für private Repositories"}">
+            <small>Fein abgestufter Token mit Leserecht „Contents: Read-only“ nur für dieses Repository.</small></label>
+        </div>
+        <div class="btn-row"><button class="btn">Speichern</button>
+          ${s.github_token_set ? '<button type="button" class="btn danger" id="btn-token-clear">Token entfernen</button>' : ""}</div>
+      </form>
+    </div>
+
     <div class="card"><h2>Passwort ändern</h2>
       <form id="pw-form" class="grid grid-3">
         <label class="field"><span>Bisheriges Passwort</span><input type="password" name="old" autocomplete="current-password" required></label>
@@ -650,6 +711,42 @@ async function viewSettings(el) {
     catch (e) { toast(e.message, true); }
   };
   $("#btn-logout").onclick = async () => { await api("POST", "/api/auth/logout"); renderAuth(false); };
+
+  const showUpdate = (u) => {
+    const info = $("#upd-info"), btn = $("#btn-upd-install"), notes = $("#upd-notes");
+    if (!info) return;
+    if (u.error) info.innerHTML = `– <span style="color:var(--danger)">${esc(u.error)}</span>`;
+    else if (u.available) info.innerHTML = `– <span style="color:var(--ok)">Version <b>${esc(u.latest)}</b> verfügbar</span>`;
+    else if (u.latest) info.textContent = `– aktuell (neueste: ${u.latest})`;
+    else info.textContent = "";
+    btn.classList.toggle("hidden", !(u.available && u.frozen));
+    btn.onclick = () => startUpdate(u.latest);
+    notes.classList.toggle("hidden", !(u.available && u.notes));
+    notes.textContent = u.notes || "";
+    if (u.available && !u.frozen) info.innerHTML += ' <span class="muted">(Installation nur in der installierten Version möglich)</span>';
+  };
+  api("GET", "/api/update").then(showUpdate).catch(() => {});
+  $("#btn-upd-check").onclick = async (ev) => {
+    ev.target.disabled = true;
+    try { showUpdate(await api("POST", "/api/update/check")); } catch (e) { toast(e.message, true); }
+    ev.target.disabled = false;
+  };
+  $("#upd-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    try {
+      await api("PUT", "/api/settings", { update_check: f.update_check.checked, github_repo: f.github_repo.value.trim(), github_token: f.github_token.value.trim() });
+      toast("Gespeichert");
+      viewSettings(el);
+    } catch (e) { toast(e.message, true); }
+  };
+  const clearBtn = $("#btn-token-clear");
+  if (clearBtn) clearBtn.onclick = async () => {
+    if (!confirm("Gespeicherten GitHub-Token entfernen?")) return;
+    await api("PUT", "/api/settings", { github_token_clear: true });
+    toast("Token entfernt");
+    viewSettings(el);
+  };
 }
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden && pollTimer) poll(); });

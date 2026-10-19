@@ -22,6 +22,14 @@ Geplant: direkter Upload nach [Paperless-ngx](https://docs.paperless-ngx.com/), 
 
 Danach im Browser `https://<Servername>:<Port>` öffnen und beim ersten Aufruf ein Passwort festlegen. Voraussetzung ist ein erreichbares Ollama mit einem Modell (Standard `qwen3.5:4b`); Adresse und Modell lassen sich in den Einstellungen ändern.
 
+### Updates
+
+OCRDMS prüft regelmäßig die [GitHub-Releases](https://github.com/phillhf/OCRDMS/releases) und zeigt neue Versionen in der Übersicht an. Ein Klick auf *Jetzt aktualisieren* lädt den Installer, prüft dessen SHA-256-Prüfsumme und installiert ihn still – Port, Ordner, Betriebsart und Firewall-Einstellungen bleiben erhalten, OCRDMS startet danach neu.
+
+Solange das Repository privat ist, braucht OCRDMS dafür einen GitHub-Token mit Leserecht (*Einstellungen → Updates*): auf GitHub unter *Settings → Developer settings → Fine-grained tokens* einen Token anlegen, nur für das Repository `OCRDMS`, Berechtigung *Contents: Read-only*.
+
+### HTTPS
+
 HTTPS nutzt eine eigene lokale Zertifizierungsstelle. Wer deren Stammzertifikat (Download unter *Einstellungen → Netzwerk*) einmal auf Handy/PC installiert, bekommt keine Zertifikatswarnung mehr.
 
 ## Entwicklung
@@ -37,14 +45,13 @@ py -3.12 -m venv .venv
 
 Mit der Umgebungsvariable `OCRDMS_DATA` lässt sich ein eigener Datenordner verwenden (Standard: `%PROGRAMDATA%\OCRDMS` für Einstellungen, Passwort-Hash, Zertifikate und Protokolle).
 
-### Installer bauen
+### Installer bauen und veröffentlichen
 
 ```powershell
-.venv\Scripts\pyinstaller packaging\ocrdms.spec --noconfirm
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\installer.iss
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # → dist\OCRDMS-Setup-<Version>.exe
 ```
 
-Ergebnis: `dist\OCRDMS-Setup-<Version>.exe`.
+Release: Version in `src\ocrdms\__init__.py` erhöhen, committen und einen passenden Tag pushen (`git tag v0.3.1` und `git push origin v0.3.1`). GitHub Actions testet, baut den Installer und veröffentlicht ihn als Release – installierte Instanzen finden das Update dann automatisch.
 
 ## Lizenz
 

@@ -1,0 +1,52 @@
+# Baut bei einem Versions-Tag (z. B. v0.3.0) den Installer und veröffentlicht ihn als GitHub-Release.
+# Die installierten OCRDMS-Instanzen finden das Update darüber automatisch.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\pip install -e .[dev]
+
+      - name: Tag und Version abgleichen
+        shell: pwsh
+        run: |
+          $v = (.venv\Scripts\python -c "import ocrdms; print(ocrdms.__version__)").Trim()
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} passt nicht zu __version__ $v" }
+
+      - name: Tests
+        run: .venv\Scripts\python -m pytest -q
+
+      - name: Inno Setup sicherstellen
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Installer bauen
+        shell: pwsh
+        run: ./packaging/build.ps1
+
+      - name: Release veröffentlichen
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = Get-ChildItem dist\OCRDMS-Setup-*.exe | Select-Object -First 1
+          gh release create "${{ github.ref_name }}" $setup.FullName --title "OCRDMS ${{ github.ref_name }}" --generate-notes
