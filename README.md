@@ -13,12 +13,17 @@ Geplant: direkter Upload nach [Paperless-ngx](https://docs.paperless-ngx.com/), 
 
 ## Installation
 
-`OCRDMS-Setup-x.y.z.exe` ausführen. Der Installer fragt nach
+**Download:** `OCRDMS-Setup-x.y.z.exe` unter [Releases](https://github.com/phillhf/OCRDMS/releases/latest) herunterladen und ausführen. Der Installer bringt alles mit (Python, OCR-Sprachdaten, Bibliotheken) und fragt nach
 
-- **Port** der Weboberfläche (Standard 8443),
+- **Installationsort** (Standard `C:\Program Files\OCRDMS`),
+- **Port** der Weboberfläche (Standard 8443; Warnung, falls der Port schon belegt ist),
 - **Arbeitsordner** (Standard `C:\OCRDMS` mit Eingang/Verarbeitet/Originale/Fehler),
 - **Betriebsart**: Windows-Dienst (läuft immer) oder Programm im Infobereich (startet bei Anmeldung),
 - **HTTPS** und **Firewall** (Zugriff nur aus dem lokalen Netz).
+
+| Installationsort | Port | Betriebsart | Zusammenfassung |
+|---|---|---|---|
+| ![](docs/installer/02_installationsort.png) | ![](docs/installer/03_port.png) | ![](docs/installer/05_betriebsart.png) | ![](docs/installer/06_zusammenfassung.png) |
 
 Danach im Browser `https://<Servername>:<Port>` öffnen und beim ersten Aufruf ein Passwort festlegen. Voraussetzung ist ein erreichbares Ollama mit einem Modell (Standard `qwen3.5:4b`); Adresse und Modell lassen sich in den Einstellungen ändern.
 

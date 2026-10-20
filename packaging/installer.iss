@@ -17,6 +17,10 @@ AppPublisher=OCRDMS
 DefaultDirName={autopf}\OCRDMS
 DefaultGroupName=OCRDMS
 DisableProgramGroupPage=yes
+DisableWelcomePage=no
+DisableDirPage=no
+UsePreviousAppDir=yes
+DisableReadyPage=no
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -132,6 +136,25 @@ begin
   SetPreviousData(PreviousDataKey, 'LocalOnly', BoolStr(OptPage.Values[2]));
 end;
 
+function PortInUse(Port: Integer): Boolean;
+var
+  Tmp: String;
+  Lines: TArrayOfString;
+  I, Code: Integer;
+begin
+  Result := False;
+  Tmp := ExpandConstant('{tmp}\ports.txt');
+  if not Exec(ExpandConstant('{cmd}'), '/C netstat -an -p TCP > "' + Tmp + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then Exit;
+  if not LoadStringsFromFile(Tmp, Lines) then Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if (Pos(':' + IntToStr(Port) + ' ', Lines[I]) > 0) and
+       ((Pos('LISTENING', Lines[I]) > 0) or (Pos('ABHÖREN', Lines[I]) > 0)) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Port: Integer;
@@ -144,7 +167,11 @@ begin
     begin
       MsgBox('Bitte einen gültigen Port zwischen 1 und 65535 eingeben.', mbError, MB_OK);
       Result := False;
-    end;
+    end
+    // Bei einer Aktualisierung belegt OCRDMS den bisherigen Port selbst – dann nicht warnen
+    else if (IntToStr(Port) <> GetPreviousData('Port', '')) and PortInUse(Port) then
+      Result := MsgBox('Port ' + IntToStr(Port) + ' wird bereits von einem anderen Programm verwendet.' + #13#10 +
+        'OCRDMS könnte dann nicht starten. Trotzdem diesen Port verwenden?', mbConfirmation, MB_YESNO) = IDYES;
   end;
 end;
 
